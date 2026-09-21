@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from tools.convert.qwen3_6.common.recipe import (
+    SourceTensor,
     SOURCE_DTYPE,
     Cast,
     Concat,
@@ -120,11 +121,11 @@ def _build_text_recipes() -> tuple[TensorRecipe, ...]:
                 (
                     TensorRecipe(
                         object_prefix + "gdn/a_log",
-                        Cast(_source(source_prefix + "linear_attn.A_log", (32,)), inventory.FP32),
+                        Cast(SourceTensor(name=source_prefix + "linear_attn.A_log", shape=(32,), dtype="F32"), inventory.FP32),
                     ),
                     TensorRecipe(
                         object_prefix + "gdn/dt_bias",
-                        Cast(_source(source_prefix + "linear_attn.dt_bias", (32,)), inventory.FP32),
+                        Cast(SourceTensor(name=source_prefix + "linear_attn.dt_bias", shape=(32,), dtype="F32"), inventory.FP32),
                     ),
                     TensorRecipe(
                         object_prefix + "gdn/convolution",
