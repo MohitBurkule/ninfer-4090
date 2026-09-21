@@ -3,6 +3,7 @@
 #include "targets/qwen3_6/impl/runtime/workspace_recipe.h"
 
 #include <cuda_bf16.h>
+#include <cstring>
 #include <cstdlib>
 #include <cstdio>
 #include <cmath>
@@ -865,16 +866,26 @@ bool debug_layers_enabled() {
 
 void debug_print_layer_norm(int layer, const Tensor& x, cudaStream_t stream) {
     const std::size_t count = static_cast<std::size_t>(x.ne[0]);
-    std::vector<__nv_bfloat16> host(count);
+    const bool is_fp32      = x.dtype == DType::FP32;
+    const std::size_t width = is_fp32 ? sizeof(float) : sizeof(__nv_bfloat16);
+    std::vector<std::uint8_t> host(count * width);
     cudaStreamSynchronize(stream);
-    if (cudaMemcpy(host.data(), x.data, count * sizeof(__nv_bfloat16), cudaMemcpyDeviceToHost) !=
-        cudaSuccess) {
+    if (cudaMemcpy(host.data(), x.data, host.size(), cudaMemcpyDeviceToHost) != cudaSuccess) {
         return;
     }
     double sum = 0.0;
     double peak = 0.0;
-    for (const __nv_bfloat16 value : host) {
-        const double v = static_cast<double>(__bfloat162float(value));
+    for (std::size_t i = 0; i < count; ++i) {
+        double v = 0.0;
+        if (is_fp32) {
+            float f = 0.0F;
+            std::memcpy(&f, host.data() + i * width, sizeof(f));
+            v = static_cast<double>(f);
+        } else {
+            __nv_bfloat16 b{};
+            std::memcpy(&b, host.data() + i * width, sizeof(b));
+            v = static_cast<double>(__bfloat162float(b));
+        }
         sum += v * v;
         peak = std::max(peak, std::abs(v));
     }
@@ -935,6 +946,12 @@ void TextContext::gdn_mix(const GdnLayerW& w, Tensor& x, int gidx, Phase ph) {
                 *active_linear_state_slots_, *active_linear_state_slots_, query_output, key_output,
                 value_output, gate_output, ph, work_, s);
         }
+        if (debug_layers_enabled() && gidx == 0) {
+            debug_print_layer_norm(-30, qc, s);
+            debug_print_layer_norm(-31, kc, s);
+            debug_print_layer_norm(-32, vc, s);
+            debug_print_layer_norm(-33, z, s);
+        }
     } else {
         const auto conv = workspace_recipe::gdn_prefill_conv<TextConfig>(work_, T);
         Tensor qkv      = conv.projected;
@@ -991,11 +1008,14 @@ void TextContext::gdn_mix(const GdnLayerW& w, Tensor& x, int gidx, Phase ph) {
                              /*normalize_qk=*/true, work_, recurrent_state, o, s);
     }
 
+    if (debug_layers_enabled() && gidx == 0) { debug_print_layer_norm(-40, o, s); }
     Tensor on = workspace_recipe::gdn_normalized_output<TextConfig>(work_, T).view(
         {kCfg.gdn_v_dim, kCfg.gdn_v_heads, T});
     ops::gated_rmsnorm(o, *w.gdn_norm, z, kCfg.rms_eps, on, s);
+    if (debug_layers_enabled() && gidx == 0) { debug_print_layer_norm(-41, on, s); }
 
     Variant::gdn_output_projection(on.view({kCfg.value_dim, T}), *w.out_proj, x, ph, work_, s);
+    if (debug_layers_enabled() && gidx == 0) { debug_print_layer_norm(-42, x, s); }
 }
 
 void TextContext::mlp_tail(const Tensor* post_norm, const MlpW& m, Tensor& x, Phase ph) {
