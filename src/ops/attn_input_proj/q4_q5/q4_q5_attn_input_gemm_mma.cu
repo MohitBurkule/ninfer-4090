@@ -59,8 +59,6 @@ template <class Schedule>
 void launch_slice(const Tensor& x, const Weight& query_key_weight, const Weight& gate_value_weight,
                   Tensor& q, Tensor& gate, Tensor& k, Tensor& v, cudaStream_t stream) {
     const bool full = (x.ne[1] % Schedule::BN) == 0;
-    const std::int32_t query_rows = (x.ne[0] == 4096) ? 4096 : 6144;
-    constexpr std::int32_t kv_rows = 1024;
     launch_pair<Schedule, RowSplitGroupedMmaCodec::Q4>(
         full, x, make_job(query_key_weight, 0, 6144, q), make_job(query_key_weight, 6144, 1024, k),
         stream);
@@ -87,37 +85,6 @@ void launch(const Tensor& x, const Weight& query_key_weight, const Weight& gate_
 using MmaR16C64S3 = GemmCfg<16, 64, 64, 16, 16, 3, 1, false, true, true>;
 using MmaR32C64S4 = GemmCfg<32, 64, 64, 16, 16, 4, 1, false, true, true>;
 
-using AttnInputMmaGeometry27 = AttnInputMmaGeometry<5120, 7168, 6144, 1024>;
-using AttnInputMmaGeometry9  = AttnInputMmaGeometry<4096, 5120, 4096, 1024>;
-using MmaR32C64S4            = GemmCfg<32, 64, 64, 16, 16, 4, 1, false, true, true>;
-
-template <class Geometry, class S, bool Full>
-void mixed_slice(const Tensor& x, const Weight& w0, const Weight& w1, Tensor& q, Tensor& g,
-                 Tensor& k, Tensor& v, cudaStream_t stream) {
-    const dim3 grid(2 * Geometry::kParentRows / S::BM, (x.ne[1] + S::BN - 1) / S::BN);
-    rowsplit_grouped_mma_kernel<S, Full, RowSplitGroupedMmaCodec::Mixed, 4>
-        <<<grid, S::THREADS, 0, stream>>>(static_cast<const __nv_bfloat16*>(x.data),
-                                          make_job(w0, 0, Geometry::kQueryRows, q),
-                                          make_job(w0, Geometry::kQueryRows, Geometry::kKvRows, k),
-                                          make_job(w1, 0, Geometry::kQueryRows, g),
-                                          make_job(w1, Geometry::kQueryRows, Geometry::kKvRows, v),
-                                          Geometry::kInputRows, x.ne[1], Geometry::kInputRows);
-    CUDA_CHECK(cudaGetLastError());
-}
-
-template <class Geometry, class S>
-void launch_mixed(const Tensor& x, const Weight& w0, const Weight& w1, Tensor& q, Tensor& g,
-                  Tensor& k, Tensor& v, cudaStream_t stream) {
-    for_each_token_slice(x.ne[1], S::BN, [&](int begin, int count) {
-        const Tensor xs = x.slice(1, begin, count);
-        Tensor qs = q.slice(1, begin, count), gs = g.slice(1, begin, count),
-               ks = k.slice(1, begin, count), vs = v.slice(1, begin, count);
-        if (count % S::BN == 0)
-            mixed_slice<Geometry, S, true>(xs, w0, w1, qs, gs, ks, vs, stream);
-        else
-            mixed_slice<Geometry, S, false>(xs, w0, w1, qs, gs, ks, vs, stream);
-    });
-}
 } // namespace
 
 void q4_q5_attn_input_grouped_mma_r16_c64_s3_launch(const Tensor& x, const Weight& query_key_weight,

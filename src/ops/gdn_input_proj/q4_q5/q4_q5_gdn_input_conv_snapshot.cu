@@ -340,22 +340,6 @@ void launch_conv(const Tensor& x, const Weight& qk_weight, const Weight& value_z
     CUDA_CHECK(cudaGetLastError());
 }
 
-template <PdlOrder Order, class Publish>
-void launch_conv_by_geometry(const Tensor& x, const Weight& qk_weight, const Weight& value_z_weight,
-                             const Tensor& conv_weight, const Tensor& conv_states, const Tensor& valid_columns,
-                             const Tensor& initial_slot, Tensor& query, Tensor& key, Tensor& value, Tensor& z,
-                             Publish publish, cudaStream_t stream) {
-    if (x.ne[0] == 4096) {
-        launch_conv<GdnSnapshotGeometry9, Order>(x, qk_weight, value_z_weight, conv_weight, conv_states,
-                                                valid_columns, initial_slot, query, key, value, z, publish, stream);
-    } else if (x.ne[0] == 5120) {
-        launch_conv<GdnSnapshotGeometry27, Order>(x, qk_weight, value_z_weight, conv_weight, conv_states,
-                                                 valid_columns, initial_slot, query, key, value, z, publish, stream);
-    } else {
-        throw std::invalid_argument("GDN Q4/Q5 projection-epilogue conv: unsupported input width");
-    }
-}
-
 } // namespace
 
 void q4_q5_gdn_input_conv_snapshot_launch(const Tensor& x, const Weight& qk_weight,
@@ -365,10 +349,6 @@ void q4_q5_gdn_input_conv_snapshot_launch(const Tensor& x, const Weight& qk_weig
                                           const Tensor& snapshot_base_slot, Tensor& query,
                                           Tensor& key, Tensor& value, Tensor& z,
                                           cudaStream_t stream) {
-    const std::int32_t channels = (x.ne[0] == 4096) ? 8192 : 10240;
-    const SnapshotHistoryPublish publish{static_cast<__nv_bfloat16*>(conv_states.data),
-                                         static_cast<const std::int32_t*>(snapshot_base_slot.data),
-                                         channels};
     if (x.ne[1] == 2) {
         launch_conv<PdlOrder::Q4ThenQ5>(
             x, qk_weight, value_z_weight, conv_weight, conv_states, valid_columns, initial_slot,
