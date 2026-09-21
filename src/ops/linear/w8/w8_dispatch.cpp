@@ -64,20 +64,27 @@ W8Launch select_w8_a16_launch(std::int32_t n, std::int32_t k, std::int32_t t) {
         if (n == 4096) { return launch_w8_mma_r64_c128; }
         break;
     case 4096:
-        // Qwen3.5-9B MTP attention (query+kv, doubled) and MLP gate/up.
-        // 4096 is the MTP attention output projection, 10240 the packed
-        // query+kv, 24576 the doubled MLP gate/up.
-        if (n == 1024) {
+        // Qwen3.5-9B: 1024 is the MTP key or value, 4096 the MTP attention
+        // output, 10240 the packed query+kv, 24576 the doubled MLP gate/up.
+        switch (n) {
+        case 1024:
+        case 4096:
+        case 10240:
             if (t <= 4) { return launch_w8_simt_r8_c4; }
             if (t <= 16) { return launch_w8_simt_r8_c8; }
-            return launch_w8_mma_r32_c128;
-        }
-        if (n == 4096 || n == 10240 || n == 24576) { return launch_w8_mma_r64_c128; }
-        if (n == 2048) {
+            return launch_w8_mma_r64_c128;
+        case 12288:
+        case 24576:
+            if (t <= 4) { return launch_w8_simt_r8_c4; }
+            if (t <= 8) { return launch_w8_simt_r8_c8; }
+            return launch_w8_mma_r64_c128;
+        case 2048:
             if (t <= 48) { return launch_w8_small_t; }
             if (t <= 56) { return launch_w8_simt_r8_c4; }
             if (t <= 895) { return launch_w8_mma_r32_c128; }
             return launch_w8_mma_r64_c128;
+        default:
+            break;
         }
         break;
     case 2048:
