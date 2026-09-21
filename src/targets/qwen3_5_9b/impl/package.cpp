@@ -82,10 +82,11 @@ ModelSamplingDefaults Package::sampling_defaults(std::string_view model) {
 }
 
 Package::WeightsProfile Package::resolve_weights(const artifact::ArtifactIdentity& identity) {
+    // This target's inventory quantises the vocabulary endpoints to Q6 rather
+    // than W8, so it resolves to the plain groupwise profile; the W8-endpoint
+    // variant belongs to the 27B's Qwen3.8 artifact and has no 9B counterpart.
     if (identity.model_id == model_id && identity.weights_id == "groupwise-int") {
         return WeightsProfile::GroupwiseInt;
-    }
-        return WeightsProfile::GroupwiseIntW8Endpoints;
     }
     if (identity.model_id == model_id && identity.weights_id == "nvfp4") {
         return WeightsProfile::Nvfp4;

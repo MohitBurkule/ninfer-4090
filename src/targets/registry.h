@@ -107,7 +107,8 @@ struct Qwen3_6_35BA3BInstance {
 };
 
 using ActiveTarget =
-    std::variant<std::unique_ptr<Qwen3_6_27BInstance>, std::unique_ptr<Qwen3_6_35BA3BInstance>>;
+    std::variant<std::unique_ptr<Qwen3_5_9BInstance>, std::unique_ptr<Qwen3_6_27BInstance>,
+                 std::unique_ptr<Qwen3_6_35BA3BInstance>>;
 
 struct ConstructedTarget {
     ActiveTarget active;

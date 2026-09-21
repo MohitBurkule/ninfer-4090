@@ -155,7 +155,20 @@ void launch_tc_partial_i8(const Tensor& q, CacheInput input, const Tensor& pos, 
                 logical_capacity, scale, static_cast<__nv_bfloat16*>(partial_acc.data),
                 static_cast<float*>(partial_m.data), static_cast<float*>(partial_l.data));
     };
-    if constexpr (TokenTile == 6) {
+    if constexpr (TokenTile == 6 && (6 * Geometry::GroupSize + 15) / 16 == 2) {
+        // Two Q row tiles: a group of four fills 24 rows, not 36 or 48, so the
+        // warp counts double relative to the three-tile routes below to keep
+        // 256 / (WarpsPerCta / RowTiles * 8) a power of two.
+        if (implementation_window > 128 && implementation_window <= 160) {
+            launch.template operator()<32, 1, 32, false>();
+        } else if (implementation_window <= 2054) {
+            launch.template operator()<16, 1, 32, false>();
+        } else if (implementation_window <= 8198) {
+            launch.template operator()<16, 1, 64, true>();
+        } else {
+            launch.template operator()<8, 2, 32, false>();
+        }
+    } else if constexpr (TokenTile == 6) {
         // Small grids need more warps per CTA. From 2K to 8K, Bc=64 halves key
         // loop iterations; dynamic smem avoids penalizing the long-context path.
         if (implementation_window > 128 && implementation_window <= 160) {

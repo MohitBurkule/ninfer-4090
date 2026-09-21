@@ -1,6 +1,9 @@
 #include "targets/qwen3_5_9b/impl/load/bindings.h"
 
 #include "artifact/typed_binding.h"
+// Shapes here are written as TextConfig expressions rather than literals,
+// so the binder cannot silently bind 27B-sized rows at a different size.
+#include "targets/qwen3_5_9b/impl/config.h"
 
 #include <algorithm>
 #include <array>
