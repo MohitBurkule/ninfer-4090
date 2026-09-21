@@ -156,7 +156,7 @@ def preflight_inventory() -> None:
         len(inventory.VISION_TENSOR_SPECS),
         len(inventory.TENSOR_SPECS),
         len(inventory.OBJECT_SPECS),
-    ) != (6, 771, 2, 12, 333, 1118, 1124):
+    ) != (6, 387, 2, 12, 333, 734, 740):
         raise ValueError("registered inventory is incomplete")
     recipe.validate_recipe_coverage()
 
