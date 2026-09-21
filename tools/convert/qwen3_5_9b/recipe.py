@@ -44,7 +44,7 @@ def _attention_qproj_part(source_name: str, gate: bool) -> Expression:
     return attention_qproj_part(
         source_name,
         gate,
-        num_heads=24,
+        num_heads=16,
         hidden_size=4096,
     )
 
@@ -110,36 +110,36 @@ def _build_text_recipes() -> tuple[TensorRecipe, ...]:
         else:
             qkv_source = _source(
                 source_prefix + "linear_attn.in_proj_qkv.weight",
-                (10240, 4096),
+                (8192, 4096),
             )
             convolution = _source(
                 source_prefix + "linear_attn.conv1d.weight",
-                (10240, 1, 4),
+                (8192, 1, 4),
             )
             recipes.extend(
                 (
                     TensorRecipe(
                         object_prefix + "gdn/a_log",
-                        Cast(_source(source_prefix + "linear_attn.A_log", (48,)), inventory.FP32),
+                        Cast(_source(source_prefix + "linear_attn.A_log", (32,)), inventory.FP32),
                     ),
                     TensorRecipe(
                         object_prefix + "gdn/dt_bias",
-                        Cast(_source(source_prefix + "linear_attn.dt_bias", (48,)), inventory.FP32),
+                        Cast(_source(source_prefix + "linear_attn.dt_bias", (32,)), inventory.FP32),
                     ),
                     TensorRecipe(
                         object_prefix + "gdn/convolution",
                         Transpose(
-                            Reshape(Slice(convolution, 1, 0, 1), (10240, 4)),
+                            Reshape(Slice(convolution, 1, 0, 1), (8192, 4)),
                             (1, 0),
                         ),
                     ),
                     TensorRecipe(
                         object_prefix + "gdn/a_projection",
-                        _source(source_prefix + "linear_attn.in_proj_a.weight", (48, 4096)),
+                        _source(source_prefix + "linear_attn.in_proj_a.weight", (32, 4096)),
                     ),
                     TensorRecipe(
                         object_prefix + "gdn/b_projection",
-                        _source(source_prefix + "linear_attn.in_proj_b.weight", (48, 4096)),
+                        _source(source_prefix + "linear_attn.in_proj_b.weight", (32, 4096)),
                     ),
                     TensorRecipe(
                         object_prefix + "gdn/query_key",
@@ -149,7 +149,7 @@ def _build_text_recipes() -> tuple[TensorRecipe, ...]:
                         object_prefix + "gdn/value_z",
                         Concat(
                             (
-                                Slice(qkv_source, 0, 4096, 10240),
+                                Slice(qkv_source, 0, 4096, 8192),
                                 _source(
                                     source_prefix + "linear_attn.in_proj_z.weight",
                                     (4096, 4096),
@@ -234,7 +234,7 @@ def _build_mtp_recipes() -> tuple[TensorRecipe, ...]:
     source_prefix = "mtp.layers.0."
     q_proj = source_prefix + "self_attn.q_proj.weight"
     return (
-        TensorRecipe("mtp/input_projection", _source("mtp.fc.weight", (4096, 10240))),
+        TensorRecipe("mtp/input_projection", _source("mtp.fc.weight", (4096, 8192))),
         TensorRecipe(
             "mtp/embedding_norm",
             _source("mtp.pre_fc_norm_embedding.weight", (4096,)),

@@ -65,11 +65,11 @@ def _build_text_core_specs() -> tuple[TensorSpec, ...]:
         else:
             specs.extend(
                 (
-                    _tensor(prefix + "gdn/a_log", (48,), FP32),
-                    _tensor(prefix + "gdn/dt_bias", (48,), FP32),
-                    _tensor(prefix + "gdn/convolution", (4, 10240), BF16),
-                    _tensor(prefix + "gdn/a_projection", (48, 4096), BF16),
-                    _tensor(prefix + "gdn/b_projection", (48, 4096), BF16),
+                    _tensor(prefix + "gdn/a_log", (32,), FP32),
+                    _tensor(prefix + "gdn/dt_bias", (32,), FP32),
+                    _tensor(prefix + "gdn/convolution", (4, 8192), BF16),
+                    _tensor(prefix + "gdn/a_projection", (32, 4096), BF16),
+                    _tensor(prefix + "gdn/b_projection", (32, 4096), BF16),
                     _tensor(prefix + "gdn/query_key", (4096, 4096), Q4),
                     _tensor(prefix + "gdn/value_z", (8192, 4096), Q5),
                     _tensor(prefix + "gdn/norm", (128,), BF16),
@@ -103,7 +103,7 @@ def _build_draft_head_specs() -> tuple[TensorSpec, ...]:
 
 def _build_mtp_specs() -> tuple[TensorSpec, ...]:
     return (
-        _tensor("mtp/input_projection", (4096, 10240), W8),
+        _tensor("mtp/input_projection", (4096, 8192), W8),
         _tensor("mtp/embedding_norm", (4096,), BF16),
         _tensor("mtp/hidden_norm", (4096,), BF16),
         _tensor("mtp/layer/input_norm", (4096,), BF16),
@@ -216,7 +216,7 @@ LOGICAL_ROW_VIEW_SPECS = (
         0,
         12288,
         (12288, 4096),
-        tuple(range(64)),
+        tuple(range(32)),
     ),
     LogicalRowViewSpec(
         "text/layers/{l}/mlp/up",
@@ -224,7 +224,7 @@ LOGICAL_ROW_VIEW_SPECS = (
         12288,
         24576,
         (12288, 4096),
-        tuple(range(64)),
+        tuple(range(32)),
     ),
     LogicalRowViewSpec(
         "mtp/layer/attention/query",
@@ -246,14 +246,14 @@ LOGICAL_ROW_VIEW_SPECS = (
         "mtp/layer/attention/output_gate",
         "mtp/layer/attention/query_key_gate_value",
         5120,
-        13312,
+        9216,
         (4096, 4096),
         None,
     ),
     LogicalRowViewSpec(
         "mtp/layer/attention/value",
         "mtp/layer/attention/query_key_gate_value",
-        13312,
+        9216,
         10240,
         (1024, 4096),
         None,
