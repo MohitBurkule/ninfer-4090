@@ -219,7 +219,18 @@ def materialize_tensor(
     reader: ShardReader,
     draft: draft_head.DraftHeadContext,
 ) -> torch.Tensor:
-    return qwen3_6_convert.materialize_tensor(spec, reader, draft)
+    # The 27B's materializer resolves its own recipe module, so delegating to it
+    # silently builds 27B-shaped tensors. This target materializes from its own.
+    derived = None
+    if spec.name in (draft_head.DRAFT_HEAD_OBJECT, draft_head.DRAFT_HEAD_TOKEN_IDS_OBJECT):
+        derived = {
+            draft_head.DRAFT_HEAD_TOKEN_IDS_OBJECT:
+                draft_head.materialize_draft_head_token_ids(draft)
+        }
+    tensor = recipe.materialize_recipe(recipe.RECIPES_BY_NAME[spec.name], reader, derived)
+    if tuple(tensor.shape) != spec.shape:
+        raise ValueError(f"{spec.name}: materialized shape {tuple(tensor.shape)} != {spec.shape}")
+    return tensor
 
 
 def encode_tensor_payload(
