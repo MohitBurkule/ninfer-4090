@@ -23,10 +23,14 @@ constexpr std::int32_t kMaximumBatchSize             = 8;
 constexpr std::uint32_t kTwoChunkPromptVisibleKeys   = 512;
 constexpr std::uint32_t kThreeChunkPromptVisibleKeys = 1024;
 
-std::int32_t kv_heads_for_q_heads(std::int32_t q_heads, const char* op) {
-    if (q_heads == 24) { return 4; }
-    if (q_heads == 16) { return 2; }
-    throw std::invalid_argument(std::string(op) + ": unsupported Q/KV head geometry");
+// Sixteen query heads is shared: the 35B pairs them with two KV heads, the
+// Qwen3.5-9B with four. The cache carries the truth, so the pairing is
+// validated rather than guessed from the query heads alone.
+std::int32_t kv_heads_for_q_heads(std::int32_t q_heads, std::int32_t cache_kv_heads,
+                                  const char* op) {
+    if (q_heads == 24 && cache_kv_heads == 4) { return 4; }
+    if (q_heads == 16 && (cache_kv_heads == 2 || cache_kv_heads == 4)) { return cache_kv_heads; }
+    throw std::invalid_argument(std::string(op) + ": unsupported query/KV head geometry");
 }
 
 void require_kv_heads(std::int32_t kv_heads, const char* op) {
@@ -211,7 +215,7 @@ void validate_attention_tensors(const Tensor& q, const Tensor& positions, const 
         throw std::invalid_argument(std::string(op) + ": scale must be 1/sqrt(256)");
     }
     const std::int32_t q_heads  = q.ne[1];
-    const std::int32_t kv_heads = kv_heads_for_q_heads(q_heads, op);
+    const std::int32_t kv_heads = kv_heads_for_q_heads(q_heads, cache.num_kv_heads, op);
     const std::int32_t tokens   = q.ne[2];
     if (tokens <= 0) { throw std::invalid_argument(std::string(op) + ": T must be positive"); }
     require_shape(q, kHeadDim, q_heads, tokens, 1, op, "q");
@@ -243,7 +247,7 @@ void validate_batched_attention_tensors(const Tensor& q, const Tensor& positions
         throw std::invalid_argument(std::string(op) + ": scale must be 1/sqrt(256)");
     }
     const std::int32_t q_heads  = q.ne[1];
-    const std::int32_t kv_heads = kv_heads_for_q_heads(q_heads, op);
+    const std::int32_t kv_heads = kv_heads_for_q_heads(q_heads, cache.num_kv_heads, op);
     const std::int32_t width    = q.ne[2];
     const std::int32_t batch    = q.ne[3];
     if (width <= 0 || batch <= 0 || batch > kMaximumBatchSize ||
