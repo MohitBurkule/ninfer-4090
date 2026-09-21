@@ -166,7 +166,7 @@ void q4_linear_swiglu_execute_plan(const Q4LinearSwiGluPlan& plan, const Tensor&
         q4_linear_swiglu_gemv_pair_launch(x, w, out, stream);
         return;
     case Q4LinearSwiGluScheduleId::SmallTExact:
-        q4_linear_swiglu_small_t_exact_launch(x, w, out, stream);
+        q4_linear_swiglu_small_t_tiled_launch(x, w, out, stream);
         return;
     case Q4LinearSwiGluScheduleId::MmaSplitHalfPairR32C40:
         q4_linear_swiglu_mma_split_half_pair_r32_c40_launch(x, w, out, stream);
