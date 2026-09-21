@@ -158,6 +158,14 @@ void gqa_attention_prompt_attention_launch(const Tensor& q, const Tensor& positi
                                                                  metadata, out, stream);
         return;
     }
+    // Sixteen query heads is not enough to choose: the 9B pairs them with four
+    // KV heads and the 35B with two. Reading the cache with the wrong mapping
+    // is silent, so the KV head count decides.
+    if (cache.num_kv_heads == Gqa9Geometry::KVHeads) {
+        gqa_attention_prompt_attention_launch_for<Gqa9Geometry>(q, positions, scale, cache,
+                                                                metadata, out, stream);
+        return;
+    }
     gqa_attention_prompt_attention_launch_for<Gqa35Geometry>(q, positions, scale, cache, metadata,
                                                              out, stream);
 }
@@ -168,6 +176,10 @@ void gqa_kv_append_launch(const Tensor& k, const Tensor& v, const Tensor& positi
         static_cast<const std::int32_t*>(cache.block_table.data)};
     if (k.ne[1] == Gqa27Geometry::KVHeads) {
         gqa_kv_append_launch_for<Gqa27Geometry>(k, v, positions, cache, metadata, stream);
+        return;
+    }
+    if (k.ne[1] == Gqa9Geometry::KVHeads) {
+        gqa_kv_append_launch_for<Gqa9Geometry>(k, v, positions, cache, metadata, stream);
         return;
     }
     gqa_kv_append_launch_for<Gqa35Geometry>(k, v, positions, cache, metadata, stream);
@@ -189,6 +201,13 @@ void gqa_attention_prompt_launch(const Tensor& q, const Tensor& k, const Tensor&
             gqa_kv_append_launch_for<Gqa27Geometry>(k, v, positions, cache, metadata, stream);
             gqa_attention_prompt_attention_launch_for<Gqa27Geometry>(q, positions, scale, cache,
                                                                      metadata, out, stream);
+            return;
+        }
+        // Sixteen query heads is ambiguous; the KV count separates 9B from 35B.
+        if (k.ne[1] == Gqa9Geometry::KVHeads) {
+            gqa_kv_append_launch_for<Gqa9Geometry>(k, v, positions, cache, metadata, stream);
+            gqa_attention_prompt_attention_launch_for<Gqa9Geometry>(q, positions, scale, cache,
+                                                                    metadata, out, stream);
             return;
         }
         gqa_kv_append_launch_for<Gqa35Geometry>(k, v, positions, cache, metadata, stream);

@@ -103,6 +103,12 @@ using Q4GemvR1W8DirectSchedule =
                            Q4GemvLaneMapping::PackedByte2, Q4GemvDecodeMode::ScalarInteger,
                            Q4GemvCodeTransfer::SyncVector16, Q4GemvScaleAccess::Scalar16Shuffle,
                            Cache::ca, 80, 1>;
+// The 4096-wide hidden state takes 64 groups per row rather than 80.
+using Q4GemvR1W8DirectK64Schedule =
+    Q4RowSplitGemvSchedule<1, 8, 16, 1, Q4GemvActivationAccess::Direct,
+                           Q4GemvLaneMapping::PackedByte2, Q4GemvDecodeMode::ScalarInteger,
+                           Q4GemvCodeTransfer::SyncVector16, Q4GemvScaleAccess::Scalar16Shuffle,
+                           Cache::ca, 64, 1>;
 
 template <class Schedule, Q4GemvScaleAccess ScaleAccess = Schedule::kScaleAccess>
 struct Q4GemvTileStorage;

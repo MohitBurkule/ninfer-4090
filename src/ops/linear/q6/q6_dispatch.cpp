@@ -1,11 +1,14 @@
 #include "ops/linear/q6/q6_dispatch.h"
 
 #include <stdexcept>
+#include <string>
 
 namespace ninfer::ops::detail {
 
 Q6Launch select_q6_a16_launch(std::int32_t n, std::int32_t k, std::int32_t t) {
-    if (t <= 0) { throw std::invalid_argument("q6 linear: unsupported shape or T"); }
+    if (t <= 0) { throw std::invalid_argument("q6 linear: unsupported shape or T: n=" +
+                                std::to_string(n) + " k=" + std::to_string(k) +
+                                " t=" + std::to_string(t)); }
 
     switch (k) {
     case 5120:
@@ -18,6 +21,15 @@ Q6Launch select_q6_a16_launch(std::int32_t n, std::int32_t k, std::int32_t t) {
             if (t <= 24) { return launch_q6_mma_r64_c24_k128; }
             if (t <= 32) { return launch_q6_mma_r64_c32_k128; }
             if (t <= 48) { return launch_q6_mma_r64_c48_k128; }
+            return launch_q6_mma_r64_c128;
+        }
+        break;
+    // Qwen3.5-9B: the same 248320-row vocabulary over a 4096-wide hidden state.
+    case 4096:
+        if (n == 248320) {
+            if (t <= 4) { return launch_q6_simt_r8_c4; }
+            if (t <= 8) { return launch_q6_simt_r8_c8; }
+            if (t <= 64) { return launch_q6_mma_r64_c64; }
             return launch_q6_mma_r64_c128;
         }
         break;
@@ -59,7 +71,9 @@ Q6Launch select_q6_a16_launch(std::int32_t n, std::int32_t k, std::int32_t t) {
         break;
     }
 
-    throw std::invalid_argument("q6 linear: unsupported shape or T");
+    throw std::invalid_argument("q6 linear: unsupported shape or T: n=" +
+                                std::to_string(n) + " k=" + std::to_string(k) +
+                                " t=" + std::to_string(t));
 }
 
 Q6Launch select_q6_launch(std::int32_t n, std::int32_t k, std::int32_t t, LinearPolicy policy) {

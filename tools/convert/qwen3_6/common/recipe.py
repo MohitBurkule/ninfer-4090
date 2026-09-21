@@ -16,7 +16,7 @@ import torch
 
 from tools.convert.common.safetensors import ShardReader
 
-from .inventory import FP32, TensorSpec, VISION_LAYERS
+from .inventory import BF16, FP32, TensorSpec, VISION_LAYERS
 
 
 SOURCE_DTYPE = "BF16"
@@ -364,9 +364,13 @@ def materialize_expression(
 
     if isinstance(expression, Cast):
         tensor = materialize_expression(expression.source, reader, derived_tensors)
-        if expression.dtype != FP32:
-            raise ValueError(f"unsupported direct cast target {expression.dtype}")
-        return tensor.to(torch.float32)
+        # Qwen3.5-9B stores the delta-net norm in float32 where the artifact
+        # wants bf16, so a cast needs both targets rather than only FP32.
+        if expression.dtype == FP32:
+            return tensor.to(torch.float32)
+        if expression.dtype == BF16:
+            return tensor.to(torch.bfloat16)
+        raise ValueError(f"unsupported direct cast target {expression.dtype}")
 
     if isinstance(expression, DraftHeadTokenIds):
         if derived_tensors is None or "text/draft_head_token_ids" not in derived_tensors:

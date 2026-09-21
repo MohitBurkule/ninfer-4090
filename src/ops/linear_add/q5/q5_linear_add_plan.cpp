@@ -5,6 +5,7 @@
 #include <array>
 #include <limits>
 #include <stdexcept>
+#include <string>
 
 namespace ninfer::ops::detail {
 namespace {
@@ -31,9 +32,12 @@ struct RouteSpec {
     Q5LinearAddScheduleId schedule;
 };
 
-constexpr std::array<SupportSpec, 2> kSupports{{
+constexpr std::array<SupportSpec, 4> kSupports{{
     {5120, 6144, 6144},
     {5120, 17408, 17408},
+    // Qwen3.5-9B: the attention/GDN output and the MLP down projection.
+    {4096, 4096, 4096},
+    {4096, 12288, 12288},
 }};
 
 constexpr std::array<RouteSpec, 6> kK6144Routes{{
@@ -104,7 +108,10 @@ bool q5_linear_add_admits(const Q5LinearAddProblem& problem) noexcept {
 
 Q5LinearAddPlan q5_linear_add_resolve_plan(const Q5LinearAddProblem& problem) {
     if (!q5_linear_add_admits(problem)) {
-        throw std::invalid_argument("q5 linear_add: exact problem or column count is not admitted");
+        throw std::invalid_argument(
+            "q5 linear_add: exact problem or column count is not admitted: rows=" +
+            std::to_string(problem.rows) + " k=" + std::to_string(problem.k) + " padded_k=" +
+            std::to_string(problem.padded_k) + " cols=" + std::to_string(problem.cols));
     }
 
     const auto resolve_from = [&](const auto& routes) -> Q5LinearAddPlan {

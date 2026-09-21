@@ -38,8 +38,14 @@ constexpr bool catalog_is_closed() noexcept {
 static_assert(catalog_is_closed(), "GDN input routes must be exact and closed");
 
 bool supported_shape(const Q4Q5GdnInputProblem& problem) noexcept {
-    return problem.input_rows == 5120 && problem.qk_rows == 4096 && problem.value_z_rows == 12288 &&
-           problem.qkv_rows == 10240 && problem.z_rows == 6144 && problem.padded_k == 5120;
+    // The 9B halves the GDN value heads, so value_z and qkv fall to 8192 and
+    // z to 4096 while the query/key block stays 4096.
+    return (problem.input_rows == 5120 && problem.qk_rows == 4096 &&
+            problem.value_z_rows == 12288 && problem.qkv_rows == 10240 &&
+            problem.z_rows == 6144 && problem.padded_k == 5120) ||
+           (problem.input_rows == 4096 && problem.qk_rows == 4096 &&
+            problem.value_z_rows == 8192 && problem.qkv_rows == 8192 &&
+            problem.z_rows == 4096 && problem.padded_k == 4096);
 }
 
 } // namespace

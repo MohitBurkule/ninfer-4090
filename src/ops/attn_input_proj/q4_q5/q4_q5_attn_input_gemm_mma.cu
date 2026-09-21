@@ -59,12 +59,16 @@ template <class Schedule>
 void launch_slice(const Tensor& x, const Weight& query_key_weight, const Weight& gate_value_weight,
                   Tensor& q, Tensor& gate, Tensor& k, Tensor& v, cudaStream_t stream) {
     const bool full = (x.ne[1] % Schedule::BN) == 0;
+    // The query rows come first in the packed weight, the kv rows after them;
+    // both counts vary with the model, so read them from the outputs.
+    const std::int32_t query_rows = q.ne[0];
+    const std::int32_t kv_rows    = k.ne[0];
     launch_pair<Schedule, RowSplitGroupedMmaCodec::Q4>(
-        full, x, make_job(query_key_weight, 0, 6144, q), make_job(query_key_weight, 6144, 1024, k),
-        stream);
+        full, x, make_job(query_key_weight, 0, query_rows, q),
+        make_job(query_key_weight, query_rows, kv_rows, k), stream);
     launch_pair<Schedule, RowSplitGroupedMmaCodec::Q5>(
-        full, x, make_job(gate_value_weight, 0, 6144, gate),
-        make_job(gate_value_weight, 6144, 1024, v), stream);
+        full, x, make_job(gate_value_weight, 0, query_rows, gate),
+        make_job(gate_value_weight, query_rows, kv_rows, v), stream);
 }
 
 template <class Schedule>

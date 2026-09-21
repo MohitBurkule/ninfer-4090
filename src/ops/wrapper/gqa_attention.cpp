@@ -23,10 +23,14 @@ constexpr std::int32_t kMaximumBatchSize             = 8;
 constexpr std::uint32_t kTwoChunkPromptVisibleKeys   = 512;
 constexpr std::uint32_t kThreeChunkPromptVisibleKeys = 1024;
 
-std::int32_t kv_heads_for_q_heads(std::int32_t q_heads, const char* op) {
-    if (q_heads == 24) { return 4; }
-    if (q_heads == 16) { return 2; }
-    throw std::invalid_argument(std::string(op) + ": unsupported Q/KV head geometry");
+// Sixteen query heads is shared: the 35B pairs them with two KV heads, the
+// Qwen3.5-9B with four. The cache carries the truth, so the pairing is
+// validated rather than guessed from the query heads alone.
+std::int32_t kv_heads_for_q_heads(std::int32_t q_heads, std::int32_t cache_kv_heads,
+                                  const char* op) {
+    if (q_heads == 24 && cache_kv_heads == 4) { return 4; }
+    if (q_heads == 16 && (cache_kv_heads == 2 || cache_kv_heads == 4)) { return cache_kv_heads; }
+    throw std::invalid_argument(std::string(op) + ": unsupported query/KV head geometry");
 }
 
 void require_kv_heads(std::int32_t kv_heads, const char* op) {
@@ -211,7 +215,7 @@ void validate_attention_tensors(const Tensor& q, const Tensor& positions, const 
         throw std::invalid_argument(std::string(op) + ": scale must be 1/sqrt(256)");
     }
     const std::int32_t q_heads  = q.ne[1];
-    const std::int32_t kv_heads = kv_heads_for_q_heads(q_heads, op);
+    const std::int32_t kv_heads = kv_heads_for_q_heads(q_heads, cache.num_kv_heads, op);
     const std::int32_t tokens   = q.ne[2];
     if (tokens <= 0) { throw std::invalid_argument(std::string(op) + ": T must be positive"); }
     require_shape(q, kHeadDim, q_heads, tokens, 1, op, "q");
@@ -243,7 +247,7 @@ void validate_batched_attention_tensors(const Tensor& q, const Tensor& positions
         throw std::invalid_argument(std::string(op) + ": scale must be 1/sqrt(256)");
     }
     const std::int32_t q_heads  = q.ne[1];
-    const std::int32_t kv_heads = kv_heads_for_q_heads(q_heads, op);
+    const std::int32_t kv_heads = kv_heads_for_q_heads(q_heads, cache.num_kv_heads, op);
     const std::int32_t width    = q.ne[2];
     const std::int32_t batch    = q.ne[3];
     if (width <= 0 || batch <= 0 || batch > kMaximumBatchSize ||
@@ -374,7 +378,11 @@ std::size_t gqa_attention_workspace_capacity_bytes(std::int32_t q_heads, DType c
                                                    GqaExecutionEnvelope envelope,
                                                    std::int32_t batch_size, std::int32_t min_width,
                                                    std::int32_t max_width) {
-    (void)kv_heads_for_q_heads(q_heads, "gqa_attention workspace");
+    // The workspace sizer sees no cache, so it validates the query heads only;
+    // the pairing is checked where the cache is in scope.
+    if (q_heads != 24 && q_heads != 16) {
+        throw std::invalid_argument("gqa_attention workspace: unsupported query head count");
+    }
     if ((cache_dtype != DType::BF16 && cache_dtype != DType::I8) || batch_size <= 0 ||
         batch_size > kMaximumBatchSize || min_width <= 0 || max_width < min_width ||
         (batch_size > 1 && max_width > kMaximumVerifyTokens) || envelope.min_visible_keys == 0 ||
@@ -426,7 +434,7 @@ void gqa_attention(const Tensor& q, const Tensor& k, const Tensor& v, const Tens
     }
     const std::int32_t width    = q.ne[2];
     const std::int32_t batch    = q.ne[3];
-    const std::int32_t kv_heads = kv_heads_for_q_heads(q.ne[1], op);
+    const std::int32_t kv_heads = kv_heads_for_q_heads(q.ne[1], cache.num_kv_heads, op);
     require_shape(k, kHeadDim, kv_heads, width, batch, op, "k");
     require_shape(v, kHeadDim, kv_heads, width, batch, op, "v");
     require_contiguous_nonnull(k, op, "k");

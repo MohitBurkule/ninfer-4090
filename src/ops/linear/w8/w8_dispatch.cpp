@@ -1,11 +1,14 @@
 #include "ops/linear/w8/w8_dispatch.h"
 
 #include <stdexcept>
+#include <string>
 
 namespace ninfer::ops::detail {
 
 W8Launch select_w8_a16_launch(std::int32_t n, std::int32_t k, std::int32_t t) {
-    if (t <= 0) { throw std::invalid_argument("w8 linear: unsupported shape or T"); }
+    if (t <= 0) { throw std::invalid_argument("w8 linear: unsupported shape or T: n=" +
+                                std::to_string(n) + " k=" + std::to_string(k) +
+                                " t=" + std::to_string(t)); }
 
     switch (k) {
     case 10240:
@@ -52,12 +55,36 @@ W8Launch select_w8_a16_launch(std::int32_t n, std::int32_t k, std::int32_t t) {
             return launch_w8_mma_r64_c128;
         }
         break;
+    case 8192:
+        // Qwen3.5-9B MTP input projection: two hidden states in, one out.
+        if (n == 4096) { return launch_w8_mma_r64_c128; }
+        break;
+    case 12288:
+        // Qwen3.5-9B MTP MLP down projection.
+        if (n == 4096) { return launch_w8_mma_r64_c128; }
+        break;
     case 4096:
-        if (n == 2048) {
+        // Qwen3.5-9B: 1024 is the MTP key or value, 4096 the MTP attention
+        // output, 10240 the packed query+kv, 24576 the doubled MLP gate/up.
+        switch (n) {
+        case 1024:
+        case 4096:
+        case 10240:
+            if (t <= 4) { return launch_w8_simt_r8_c4; }
+            if (t <= 16) { return launch_w8_simt_r8_c8; }
+            return launch_w8_mma_r64_c128;
+        case 12288:
+        case 24576:
+            if (t <= 4) { return launch_w8_simt_r8_c4; }
+            if (t <= 8) { return launch_w8_simt_r8_c8; }
+            return launch_w8_mma_r64_c128;
+        case 2048:
             if (t <= 48) { return launch_w8_small_t; }
             if (t <= 56) { return launch_w8_simt_r8_c4; }
             if (t <= 895) { return launch_w8_mma_r32_c128; }
             return launch_w8_mma_r64_c128;
+        default:
+            break;
         }
         break;
     case 2048:
@@ -141,7 +168,9 @@ W8Launch select_w8_a16_launch(std::int32_t n, std::int32_t k, std::int32_t t) {
         break;
     }
 
-    throw std::invalid_argument("w8 linear: unsupported shape or T");
+    throw std::invalid_argument("w8 linear: unsupported shape or T: n=" +
+                                std::to_string(n) + " k=" + std::to_string(k) +
+                                " t=" + std::to_string(t));
 }
 
 W8Launch select_w8_launch(std::int32_t n, std::int32_t k, std::int32_t t, LinearPolicy policy) {

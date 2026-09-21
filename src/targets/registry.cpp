@@ -1,5 +1,7 @@
 #include "targets/registry.h"
 
+#include <ninfer/targets/qwen3_5_9b/package.h>
+
 #include "artifact/binder.h"
 #include "artifact/materializer.h"
 #include "artifact/reader.h"
@@ -133,6 +135,22 @@ ConstructedTarget construct_registered(const EngineOptions& options, DeviceConte
 
 } // namespace
 
+LoadedQwen3_5_9B::LoadedQwen3_5_9B(std::unique_ptr<Qwen3_5_9B::LoadedModel> stable_model)
+    : model(std::move(stable_model)), frontend(Qwen3_5_9B::make_frontend(*model)) {}
+
+LoadedQwen3_5_9B::~LoadedQwen3_5_9B() = default;
+
+Qwen3_5_9BInstance::Qwen3_5_9BInstance(std::unique_ptr<LoadedQwen3_5_9B> stable_loaded,
+                                         runtime::KvCapacityResolution resolution,
+                                         Qwen3_5_9B::SequencePlan sequence_plan,
+                                         DeviceContext& device)
+    : loaded(std::move(stable_loaded)), kv_capacity_resolution(resolution),
+      request_memory(device, sequence_plan.request_transient_capacity_bytes()),
+      capacity(sequence_plan.capacity()),
+      program(Qwen3_5_9B::create_program(*loaded->model, std::move(sequence_plan), device)) {}
+
+Qwen3_5_9BInstance::~Qwen3_5_9BInstance() = default;
+
 LoadedQwen3_6_27B::LoadedQwen3_6_27B(std::unique_ptr<Qwen3_6_27B::LoadedModel> stable_model)
     : model(std::move(stable_model)), frontend(Qwen3_6_27B::make_frontend(*model)) {}
 
@@ -179,6 +197,10 @@ ConstructedTarget construct_target(const EngineOptions& options, DeviceContext& 
     if (identity.model_id == Qwen3_6_27B::qwen3_8_model_id) {
         return construct_registered<Qwen3_6_27B, LoadedQwen3_6_27B, Qwen3_6_27BInstance>(
             options, device, reader, load_start, Qwen3_6_27B::qwen3_8_target_key);
+    }
+    if (identity.model_id == Qwen3_5_9B::model_id) {
+        return construct_registered<Qwen3_5_9B, LoadedQwen3_5_9B, Qwen3_5_9BInstance>(
+            options, device, reader, load_start, Qwen3_5_9B::target_key);
     }
     if (identity.model_id == Qwen3_6_35BA3B::model_id) {
         return construct_registered<Qwen3_6_35BA3B, LoadedQwen3_6_35BA3B, Qwen3_6_35BA3BInstance>(

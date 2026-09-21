@@ -155,7 +155,20 @@ void launch_tc_partial_i8(const Tensor& q, CacheInput input, const Tensor& pos, 
                 logical_capacity, scale, static_cast<__nv_bfloat16*>(partial_acc.data),
                 static_cast<float*>(partial_m.data), static_cast<float*>(partial_l.data));
     };
-    if constexpr (TokenTile == 6) {
+    if constexpr (TokenTile == 6 && (6 * Geometry::GroupSize + 15) / 16 == 2) {
+        // Two Q row tiles: a group of four fills 24 rows, not 36 or 48, so the
+        // warp counts double relative to the three-tile routes below to keep
+        // 256 / (WarpsPerCta / RowTiles * 8) a power of two.
+        if (implementation_window > 128 && implementation_window <= 160) {
+            launch.template operator()<32, 1, 32, false>();
+        } else if (implementation_window <= 2054) {
+            launch.template operator()<16, 1, 32, false>();
+        } else if (implementation_window <= 8198) {
+            launch.template operator()<16, 1, 64, true>();
+        } else {
+            launch.template operator()<8, 2, 32, false>();
+        }
+    } else if constexpr (TokenTile == 6) {
         // Small grids need more warps per CTA. From 2K to 8K, Bc=64 halves key
         // loop iterations; dynamic smem avoids penalizing the long-context path.
         if (implementation_window > 128 && implementation_window <= 160) {
@@ -168,8 +181,14 @@ void launch_tc_partial_i8(const Tensor& q, CacheInput input, const Tensor& pos, 
             launch.template operator()<6, 2, 32, false>();
         }
     } else if constexpr (TokenTile == 5) {
-        if constexpr (Geometry::GroupSize == 6) {
-            // Two Q row tiles for the 27B group of six.
+        // The warp counts below are chosen for a given number of Q row tiles,
+        // not for a particular model: every route must leave
+        // 256 / (WarpsPerCta / RowTiles * 8) a power of two. Selecting on the
+        // group size worked while six meant two tiles and eight meant three,
+        // and sent the 9B's group of four - also two tiles - down the
+        // three-tile route, where the warp split is not integral.
+        if constexpr ((TokenTile * Geometry::GroupSize + 15) / 16 == 2) {
+            // Two Q row tiles: the 27B group of six, and the 9B group of four.
             if (implementation_window > 128 && implementation_window <= 512) {
                 launch.template operator()<32, 1, 32, false>();
             } else if (implementation_window <= 1029) {
@@ -236,6 +255,9 @@ std::int32_t gqa_attention_split_capacity(std::int32_t q_heads, std::int32_t tok
     if (q_heads == Gqa27Geometry::QHeads) {
         return gqa_small_t_launch_capacity<Gqa27Geometry>(envelope, tokens, cache_dtype);
     }
+    // Both remaining geometries carry sixteen query heads; only the KV mapping
+    // separates them, and this entry point is not told the KV count. The split
+    // capacity depends on query heads alone, so either is correct here.
     if (q_heads == Gqa35Geometry::QHeads) {
         return gqa_small_t_launch_capacity<Gqa35Geometry>(envelope, tokens, cache_dtype);
     }
@@ -412,6 +434,14 @@ void gqa_attention_small_t_launch(const Tensor& q, const Tensor& k, const Tensor
                                                         out, stream);
         return;
     }
+    // Sixteen query heads is shared with the 35B; the KV head count is what
+    // separates them, and picking wrong reads the cache with the wrong mapping.
+    if (cache.num_kv_heads == Gqa9Geometry::KVHeads) {
+        gqa_attention_small_t_launch_for<Gqa9Geometry>(q, input, pos, scale, cache, invocation,
+                                                       envelope, partial_acc, partial_m, partial_l,
+                                                       out, stream);
+        return;
+    }
     gqa_attention_small_t_launch_for<Gqa35Geometry>(q, input, pos, scale, cache, invocation,
                                                     envelope, partial_acc, partial_m, partial_l,
                                                     out, stream);
@@ -436,6 +466,14 @@ void gqa_attention_cached_small_t_launch(const Tensor& q, const Tensor& pos, flo
         gqa_attention_small_t_launch_for<Gqa27Geometry>(q, input, pos, scale, batch_cache,
                                                         invocation, envelope, partial_acc,
                                                         partial_m, partial_l, out, stream);
+        return;
+    }
+    // Sixteen query heads is shared with the 35B; the KV head count is what
+    // separates them, and picking wrong reads the cache with the wrong mapping.
+    if (batch_cache.num_kv_heads == Gqa9Geometry::KVHeads) {
+        gqa_attention_small_t_launch_for<Gqa9Geometry>(q, input, pos, scale, batch_cache,
+                                                       invocation, envelope, partial_acc,
+                                                       partial_m, partial_l, out, stream);
         return;
     }
     gqa_attention_small_t_launch_for<Gqa35Geometry>(q, input, pos, scale, batch_cache, invocation,

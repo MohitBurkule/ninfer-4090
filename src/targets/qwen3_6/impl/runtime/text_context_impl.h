@@ -2,6 +2,11 @@
 #include "targets/qwen3_6/impl/runtime/text_context.h"
 #include "targets/qwen3_6/impl/runtime/workspace_recipe.h"
 
+#include <cuda_bf16.h>
+#include <cstring>
+#include <cstdlib>
+#include <cstdio>
+#include <cmath>
 #include "core/nvtx.h"
 #include "targets/qwen3_6/impl/runtime/visual_scatter.h"
 #include "targets/qwen3_6/impl/runtime/vision_context.h"
@@ -850,6 +855,45 @@ void TextContext::attn_mix(const FullLayerW& w, Tensor& x, int fidx, Phase ph) {
     Variant::attention_output_projection(a.view({kCfg.q_size, T}), *w.o_proj, x, ph, work_, s);
 }
 
+namespace {
+
+// NINFER_DEBUG_LAYERS prints the hidden-state norm after each layer, which is
+// how a layer that produces garbage is located without a profiler.
+bool debug_layers_enabled() {
+    static const bool enabled = std::getenv("NINFER_DEBUG_LAYERS") != nullptr;
+    return enabled;
+}
+
+void debug_print_layer_norm(int layer, const Tensor& x, cudaStream_t stream) {
+    const std::size_t count = static_cast<std::size_t>(x.ne[0]);
+    const bool is_fp32      = x.dtype == DType::FP32;
+    const std::size_t width = is_fp32 ? sizeof(float) : sizeof(__nv_bfloat16);
+    std::vector<std::uint8_t> host(count * width);
+    cudaStreamSynchronize(stream);
+    if (cudaMemcpy(host.data(), x.data, host.size(), cudaMemcpyDeviceToHost) != cudaSuccess) {
+        return;
+    }
+    double sum = 0.0;
+    double peak = 0.0;
+    for (std::size_t i = 0; i < count; ++i) {
+        double v = 0.0;
+        if (is_fp32) {
+            float f = 0.0F;
+            std::memcpy(&f, host.data() + i * width, sizeof(f));
+            v = static_cast<double>(f);
+        } else {
+            __nv_bfloat16 b{};
+            std::memcpy(&b, host.data() + i * width, sizeof(b));
+            v = static_cast<double>(__bfloat162float(b));
+        }
+        sum += v * v;
+        peak = std::max(peak, std::abs(v));
+    }
+    std::fprintf(stderr, "[layers] %2d norm=%.4f peak=%.4f\n", layer, std::sqrt(sum), peak);
+}
+
+} // namespace
+
 void TextContext::gdn_mix(const GdnLayerW& w, Tensor& x, int gidx, Phase ph) {
     cudaStream_t s = ctx_.stream;
     const int T    = x.ne[1];
@@ -967,6 +1011,7 @@ void TextContext::mlp_tail(const Tensor* post_norm, const MlpW& m, Tensor& x, Ph
 template <class Tap>
 void TextContext::run_layers(Tensor& x, Phase ph, Tap& tap) {
     const bool prefill = ph == Phase::Prefill;
+    if (debug_layers_enabled()) { debug_print_layer_norm(-1, x, ctx_.stream); }
     for (int layer = 0; layer < kCfg.n_layers; ++layer) {
         if (ModelConfig::is_full(layer)) {
             const int fidx         = ModelConfig::full_idx(layer);
@@ -988,6 +1033,7 @@ void TextContext::run_layers(Tensor& x, Phase ph, Tap& tap) {
                 auto mlp_scope = work_.scope();
                 mlp_tail(full.post_attn_norm, full.mlp, x, ph);
                 if constexpr (Tap::enabled) { tap.capture_layer(layer, x, ctx_.stream); }
+                if (debug_layers_enabled()) { debug_print_layer_norm(layer, x, ctx_.stream); }
             }
         } else {
             const int gidx       = ModelConfig::gdn_idx(layer);
@@ -1009,6 +1055,7 @@ void TextContext::run_layers(Tensor& x, Phase ph, Tap& tap) {
                 auto mlp_scope = work_.scope();
                 mlp_tail(gdn.post_attn_norm, gdn.mlp, x, ph);
                 if constexpr (Tap::enabled) { tap.capture_layer(layer, x, ctx_.stream); }
+                if (debug_layers_enabled()) { debug_print_layer_norm(layer, x, ctx_.stream); }
             }
         }
     }
