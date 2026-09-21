@@ -236,6 +236,9 @@ std::int32_t gqa_attention_split_capacity(std::int32_t q_heads, std::int32_t tok
     if (q_heads == Gqa27Geometry::QHeads) {
         return gqa_small_t_launch_capacity<Gqa27Geometry>(envelope, tokens, cache_dtype);
     }
+    // Both remaining geometries carry sixteen query heads; only the KV mapping
+    // separates them, and this entry point is not told the KV count. The split
+    // capacity depends on query heads alone, so either is correct here.
     if (q_heads == Gqa35Geometry::QHeads) {
         return gqa_small_t_launch_capacity<Gqa35Geometry>(envelope, tokens, cache_dtype);
     }
@@ -412,6 +415,14 @@ void gqa_attention_small_t_launch(const Tensor& q, const Tensor& k, const Tensor
                                                         out, stream);
         return;
     }
+    // Sixteen query heads is shared with the 35B; the KV head count is what
+    // separates them, and picking wrong reads the cache with the wrong mapping.
+    if (cache.k.ne[1] == Gqa9Geometry::KVHeads) {
+        gqa_attention_small_t_launch_for<Gqa9Geometry>(q, input, pos, scale, cache, invocation,
+                                                       envelope, partial_acc, partial_m, partial_l,
+                                                       out, stream);
+        return;
+    }
     gqa_attention_small_t_launch_for<Gqa35Geometry>(q, input, pos, scale, cache, invocation,
                                                     envelope, partial_acc, partial_m, partial_l,
                                                     out, stream);
@@ -436,6 +447,14 @@ void gqa_attention_cached_small_t_launch(const Tensor& q, const Tensor& pos, flo
         gqa_attention_small_t_launch_for<Gqa27Geometry>(q, input, pos, scale, batch_cache,
                                                         invocation, envelope, partial_acc,
                                                         partial_m, partial_l, out, stream);
+        return;
+    }
+    // Sixteen query heads is shared with the 35B; the KV head count is what
+    // separates them, and picking wrong reads the cache with the wrong mapping.
+    if (batch_cache.k.ne[1] == Gqa9Geometry::KVHeads) {
+        gqa_attention_small_t_launch_for<Gqa9Geometry>(q, input, pos, scale, batch_cache,
+                                                       invocation, envelope, partial_acc,
+                                                       partial_m, partial_l, out, stream);
         return;
     }
     gqa_attention_small_t_launch_for<Gqa35Geometry>(q, input, pos, scale, batch_cache, invocation,

@@ -22,4 +22,10 @@ struct GqaGeometry {
 using Gqa27Geometry = GqaGeometry<24, 4, 1>;
 using Gqa35Geometry = GqaGeometry<16, 2, 2>;
 
+// Qwen3.5-9B shares the 35B's query-head count and the 27B's KV-head count, so
+// neither existing geometry describes it and a dispatch on query heads alone
+// silently sends it to <16, 2>. Splits follow the 35B: the grid is sized by
+// query heads, and sixteen of them need the wider split to fill the device.
+using Gqa9Geometry = GqaGeometry<16, 4, 2>;
+
 } // namespace ninfer::ops
