@@ -378,7 +378,11 @@ std::size_t gqa_attention_workspace_capacity_bytes(std::int32_t q_heads, DType c
                                                    GqaExecutionEnvelope envelope,
                                                    std::int32_t batch_size, std::int32_t min_width,
                                                    std::int32_t max_width) {
-    (void)kv_heads_for_q_heads(q_heads, "gqa_attention workspace");
+    // The workspace sizer sees no cache, so it validates the query heads only;
+    // the pairing is checked where the cache is in scope.
+    if (q_heads != 24 && q_heads != 16) {
+        throw std::invalid_argument("gqa_attention workspace: unsupported query head count");
+    }
     if ((cache_dtype != DType::BF16 && cache_dtype != DType::I8) || batch_size <= 0 ||
         batch_size > kMaximumBatchSize || min_width <= 0 || max_width < min_width ||
         (batch_size > 1 && max_width > kMaximumVerifyTokens) || envelope.min_visible_keys == 0 ||
@@ -430,7 +434,7 @@ void gqa_attention(const Tensor& q, const Tensor& k, const Tensor& v, const Tens
     }
     const std::int32_t width    = q.ne[2];
     const std::int32_t batch    = q.ne[3];
-    const std::int32_t kv_heads = kv_heads_for_q_heads(q.ne[1], op);
+    const std::int32_t kv_heads = kv_heads_for_q_heads(q.ne[1], cache.num_kv_heads, op);
     require_shape(k, kHeadDim, kv_heads, width, batch, op, "k");
     require_shape(v, kHeadDim, kv_heads, width, batch, op, "v");
     require_contiguous_nonnull(k, op, "k");
