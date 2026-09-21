@@ -151,7 +151,10 @@ void Variant::mtp_attention_projection(const Tensor& hidden,
 
 void Variant::mtp_kv_projection(const Tensor& hidden, const MtpAttentionProjectionWeights& weights,
                                 Tensor& key, Tensor& value, WorkspaceArena&, cudaStream_t stream) {
-    ops::linear_pair(hidden, weights.key, weights.value, key, value, stream);
+    // linear_pair's fused routes are tabulated for K=5120 and K=2048 only, so the
+    // 9B's 4096-wide hidden state projects key and value separately.
+    ops::linear(hidden, weights.key, key, stream);
+    ops::linear(hidden, weights.value, value, stream);
 }
 
 void Variant::mtp_q_gate_projection(const Tensor& hidden,
