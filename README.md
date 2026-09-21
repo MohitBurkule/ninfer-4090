@@ -11,6 +11,9 @@ This fork targets `sm_89` and Linux. Blackwell-only NVFP4/W4A4 execution is unav
 engine uses the same groupwise-int path as the 3090 base. The Windows path and the
 Qwen3.6-35B-A3B target are inherited but untested on the RTX 4090.
 
+**Qwen3.5-9B also runs here.** Its target, converter and `sm_89` kernel geometries are in
+this fork; see [Qwen3.5-9B on the RTX 4090](#qwen35-9b-on-the-rtx-4090).
+
 ## Measured results on the RTX 4090
 
 Conditions: single request, greedy decoding, CUDA Graphs on, INT8 KV, `--prefill-chunk 1024`,
@@ -99,6 +102,48 @@ is engine time, not draft quality.
 
 Full configurations, method, and raw numbers:
 [NInfer against llama.cpp](docs/llamacpp-comparison.md).
+
+## Qwen3.5-9B on the RTX 4090
+
+The 32-layer hybrid Qwen3.5-9B (24 Gated DeltaNet layers, 8 full-attention layers, one MTP
+draft layer, 248,320-row vocabulary) converts to a 6.51 GiB groupwise artifact and serves
+from the same binary as the 27B.
+
+Convert and serve:
+
+```bash
+python3 -m tools.convert.qwen3_5_9b.convert --model /path/to/Qwen3.5-9B \
+    --out models/qwen3_5_9b.ninfer
+python3 -m tools.convert.qwen3_5_9b.verify --artifact models/qwen3_5_9b.ninfer \
+    --model /path/to/Qwen3.5-9B
+
+docker run --rm --gpus all --publish 127.0.0.1:8082:8082 \
+  --volume "$PWD/models:/workspace/models:ro" \
+  ninfer-4090:sm89 \
+  ninfer-serve models/qwen3_5_9b.ninfer --host 0.0.0.0 --port 8082 \
+  --max-context 163840 --kv-capacity auto --max-concurrency 4 \
+  --kv-dtype rk2v4-e8 --spec mtp --draft-tokens 3 --lm-head-draft
+```
+
+Measured on one RTX 4090, `rk2v4-e8` KV, MTP with three draft tokens:
+
+| Streams | aggregate decode tok/s | per stream | prefill tok/s | TTFT |
+|---:|---:|---:|---:|---:|
+| 1 | 104 | 104 | 980 | 42 ms |
+| 2 | 168 | 87 | - | - |
+| 4 | 201 | 55 | - | - |
+| 8 | 207 | 56 | - | - |
+
+Weights occupy 5.78 GiB, leaving room for a 655,360-token KV pool at `--kv-capacity auto`.
+MTP acceptance measures 9-15% on prose and code, well below the 27B's, so the draft window
+buys little here.
+
+Two engine notes for anyone adding a further model profile. Several kernels are compiled
+for one model's exact shapes and validate nothing at the call site: the small-T attention
+input split, the GDN input projections, and the Q4 SwiGLU small-T and GEMV paths all carried
+the 27B's row counts, and a differently shaped model reached them and computed silently
+wrong results. Each now takes its geometry as a template parameter. The per-layer hidden
+norm printed by `NINFER_DEBUG_LAYERS=1` is what located that class of fault.
 
 ## Quick start (Linux)
 
