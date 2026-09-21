@@ -203,6 +203,13 @@ void gqa_attention_prompt_launch(const Tensor& q, const Tensor& k, const Tensor&
                                                                      metadata, out, stream);
             return;
         }
+        // Sixteen query heads is ambiguous; the KV count separates 9B from 35B.
+        if (k.ne[1] == Gqa9Geometry::KVHeads) {
+            gqa_kv_append_launch_for<Gqa9Geometry>(k, v, positions, cache, metadata, stream);
+            gqa_attention_prompt_attention_launch_for<Gqa9Geometry>(q, positions, scale, cache,
+                                                                    metadata, out, stream);
+            return;
+        }
         gqa_kv_append_launch_for<Gqa35Geometry>(k, v, positions, cache, metadata, stream);
         gqa_attention_prompt_attention_launch_for<Gqa35Geometry>(q, positions, scale, cache,
                                                                  metadata, out, stream);
