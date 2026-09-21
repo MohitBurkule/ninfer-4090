@@ -161,7 +161,7 @@ def _build_text_recipes() -> tuple[TensorRecipe, ...]:
                     ),
                     TensorRecipe(
                         object_prefix + "gdn/norm",
-                        SourceTensor(name=source_prefix + "linear_attn.norm.weight", shape=(128,), dtype="F32"),
+                        Cast(SourceTensor(name=source_prefix + "linear_attn.norm.weight", shape=(128,), dtype="F32"), inventory.BF16),
                     ),
                     TensorRecipe(
                         object_prefix + "gdn/output",
