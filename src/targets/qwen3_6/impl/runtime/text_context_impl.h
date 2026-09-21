@@ -904,11 +904,6 @@ void TextContext::gdn_mix(const GdnLayerW& w, Tensor& x, int gidx, Phase ph) {
     Tensor beta        = control.beta;
     Variant::gdn_norm_control_projection(x, *w.input_norm, kCfg.rms_eps, *w.projection, h, g, beta,
                                          work_, s);
-    if (debug_layers_enabled() && gidx == 0) {
-        debug_print_layer_norm(-10, h, s);
-        debug_print_layer_norm(-11, g, s);
-        debug_print_layer_norm(-12, beta, s);
-    }
 
     const auto projection = workspace_recipe::gdn_projection<TextConfig>(work_, T);
     Tensor z              = projection.output_gate.view({kCfg.gdn_v_dim, kCfg.gdn_v_heads, T});
@@ -946,12 +941,6 @@ void TextContext::gdn_mix(const GdnLayerW& w, Tensor& x, int gidx, Phase ph) {
                 *active_linear_state_slots_, *active_linear_state_slots_, query_output, key_output,
                 value_output, gate_output, ph, work_, s);
         }
-        if (debug_layers_enabled() && gidx == 0) {
-            debug_print_layer_norm(-30, qc, s);
-            debug_print_layer_norm(-31, kc, s);
-            debug_print_layer_norm(-32, vc, s);
-            debug_print_layer_norm(-33, z, s);
-        }
     } else {
         const auto conv = workspace_recipe::gdn_prefill_conv<TextConfig>(work_, T);
         Tensor qkv      = conv.projected;
@@ -963,11 +952,6 @@ void TextContext::gdn_mix(const GdnLayerW& w, Tensor& x, int gidx, Phase ph) {
         ops::extract_bf16_columns(qkv_c, 0, qc, s);
         ops::extract_bf16_columns(qkv_c, kCfg.key_dim, kc, s);
         ops::extract_bf16_columns(qkv_c, 2 * kCfg.key_dim, vc, s);
-        if (debug_layers_enabled() && gidx == 0) {
-            debug_print_layer_norm(-20, qkv, s);
-            debug_print_layer_norm(-21, qkv_c, s);
-            debug_print_layer_norm(-22, z, s);
-        }
     }
 
     Tensor q_recurrent = qc.view({kCfg.gdn_k_dim, kCfg.gdn_k_heads, T});
@@ -1008,14 +992,11 @@ void TextContext::gdn_mix(const GdnLayerW& w, Tensor& x, int gidx, Phase ph) {
                              /*normalize_qk=*/true, work_, recurrent_state, o, s);
     }
 
-    if (debug_layers_enabled() && gidx == 0) { debug_print_layer_norm(-40, o, s); }
     Tensor on = workspace_recipe::gdn_normalized_output<TextConfig>(work_, T).view(
         {kCfg.gdn_v_dim, kCfg.gdn_v_heads, T});
     ops::gated_rmsnorm(o, *w.gdn_norm, z, kCfg.rms_eps, on, s);
-    if (debug_layers_enabled() && gidx == 0) { debug_print_layer_norm(-41, on, s); }
 
     Variant::gdn_output_projection(on.view({kCfg.value_dim, T}), *w.out_proj, x, ph, work_, s);
-    if (debug_layers_enabled() && gidx == 0) { debug_print_layer_norm(-42, x, s); }
 }
 
 void TextContext::mlp_tail(const Tensor* post_norm, const MlpW& m, Tensor& x, Phase ph) {
