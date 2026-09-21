@@ -5,6 +5,7 @@
 #include <array>
 #include <limits>
 #include <stdexcept>
+#include <string>
 
 namespace ninfer::ops::detail {
 namespace {
@@ -107,7 +108,10 @@ bool q5_linear_add_admits(const Q5LinearAddProblem& problem) noexcept {
 
 Q5LinearAddPlan q5_linear_add_resolve_plan(const Q5LinearAddProblem& problem) {
     if (!q5_linear_add_admits(problem)) {
-        throw std::invalid_argument("q5 linear_add: exact problem or column count is not admitted");
+        throw std::invalid_argument(
+            "q5 linear_add: exact problem or column count is not admitted: rows=" +
+            std::to_string(problem.rows) + " k=" + std::to_string(problem.k) + " padded_k=" +
+            std::to_string(problem.padded_k) + " cols=" + std::to_string(problem.cols));
     }
 
     const auto resolve_from = [&](const auto& routes) -> Q5LinearAddPlan {

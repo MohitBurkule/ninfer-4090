@@ -60,7 +60,9 @@ void launch_split2(const Tensor& x, const Weight& w, Tensor& out, cudaStream_t s
 
 template <int Cols>
 void dispatch_split2_cols(const Tensor& x, const Weight& w, Tensor& out, cudaStream_t stream) {
-    if (w.k == 6144) {
+    if (w.k == 4096) {
+        launch_split2<Cols, 4, 4096>(x, w, out, stream);
+    } else if (w.k == 6144) {
         launch_split2<Cols, 6, 6144>(x, w, out, stream);
     } else if (w.k == 12288) {
         launch_split2<Cols, 12, 12288>(x, w, out, stream);
