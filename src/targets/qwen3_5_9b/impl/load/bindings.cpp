@@ -189,7 +189,8 @@ load_gdn_input_projection(const GdnPlan& plan, const artifact::MaterializedArtif
     if (const auto* split = std::get_if<SplitGdnInputProjectionPlan>(&plan.input_projection)) {
         return SplitGdnInputProjectionPayload{
             .query_key = materialized_weight(materialized, split->query_key, 4096, 4096),
-            .value_z   = materialized_weight(materialized, split->value_z, 12288, 4096),
+            .value_z   = materialized_weight(materialized, split->value_z, 2 * TextConfig::value_dim,
+                                       TextConfig::hidden),
         };
     }
     const auto& fused = std::get<FusedGdnInputProjectionPlan>(plan.input_projection);
@@ -235,7 +236,7 @@ void bind_groupwise_text_layers(artifact::Binder& binder, BindingPlan& out) {
                 .query_key = bind_weight(binder, prefix + "gdn/query_key",
                                          NumericFormat::Q4G64_F16S, {4096, 4096}),
                 .value_z   = bind_weight(binder, prefix + "gdn/value_z", NumericFormat::Q5G64_F16S,
-                                         {12288, 4096}),
+                                     {2 * TextConfig::value_dim, TextConfig::hidden}),
             };
             target.gdn.norm = artifact::bind_device_tensor(binder, prefix + "gdn/norm",
                                                            NumericFormat::BF16, {128});
