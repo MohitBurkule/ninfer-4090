@@ -161,7 +161,7 @@ void gqa_attention_prompt_attention_launch(const Tensor& q, const Tensor& positi
     // Sixteen query heads is not enough to choose: the 9B pairs them with four
     // KV heads and the 35B with two. Reading the cache with the wrong mapping
     // is silent, so the KV head count decides.
-    if (cache.k.ne[1] == Gqa9Geometry::KVHeads) {
+    if (cache.num_kv_heads == Gqa9Geometry::KVHeads) {
         gqa_attention_prompt_attention_launch_for<Gqa9Geometry>(q, positions, scale, cache,
                                                                 metadata, out, stream);
         return;

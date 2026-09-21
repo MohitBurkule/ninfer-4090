@@ -168,8 +168,14 @@ void launch_tc_partial_i8(const Tensor& q, CacheInput input, const Tensor& pos, 
             launch.template operator()<6, 2, 32, false>();
         }
     } else if constexpr (TokenTile == 5) {
-        if constexpr (Geometry::GroupSize == 6) {
-            // Two Q row tiles for the 27B group of six.
+        // The warp counts below are chosen for a given number of Q row tiles,
+        // not for a particular model: every route must leave
+        // 256 / (WarpsPerCta / RowTiles * 8) a power of two. Selecting on the
+        // group size worked while six meant two tiles and eight meant three,
+        // and sent the 9B's group of four - also two tiles - down the
+        // three-tile route, where the warp split is not integral.
+        if constexpr ((TokenTile * Geometry::GroupSize + 15) / 16 == 2) {
+            // Two Q row tiles: the 27B group of six, and the 9B group of four.
             if (implementation_window > 128 && implementation_window <= 512) {
                 launch.template operator()<32, 1, 32, false>();
             } else if (implementation_window <= 1029) {
@@ -417,7 +423,7 @@ void gqa_attention_small_t_launch(const Tensor& q, const Tensor& k, const Tensor
     }
     // Sixteen query heads is shared with the 35B; the KV head count is what
     // separates them, and picking wrong reads the cache with the wrong mapping.
-    if (cache.k.ne[1] == Gqa9Geometry::KVHeads) {
+    if (cache.num_kv_heads == Gqa9Geometry::KVHeads) {
         gqa_attention_small_t_launch_for<Gqa9Geometry>(q, input, pos, scale, cache, invocation,
                                                        envelope, partial_acc, partial_m, partial_l,
                                                        out, stream);
@@ -451,7 +457,7 @@ void gqa_attention_cached_small_t_launch(const Tensor& q, const Tensor& pos, flo
     }
     // Sixteen query heads is shared with the 35B; the KV head count is what
     // separates them, and picking wrong reads the cache with the wrong mapping.
-    if (batch_cache.k.ne[1] == Gqa9Geometry::KVHeads) {
+    if (batch_cache.num_kv_heads == Gqa9Geometry::KVHeads) {
         gqa_attention_small_t_launch_for<Gqa9Geometry>(q, input, pos, scale, batch_cache,
                                                        invocation, envelope, partial_acc,
                                                        partial_m, partial_l, out, stream);
