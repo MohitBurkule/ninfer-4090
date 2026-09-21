@@ -67,6 +67,11 @@ W8Launch select_w8_a16_launch(std::int32_t n, std::int32_t k, std::int32_t t) {
         // Qwen3.5-9B MTP attention (query+kv, doubled) and MLP gate/up.
         // 4096 is the MTP attention output projection, 10240 the packed
         // query+kv, 24576 the doubled MLP gate/up.
+        if (n == 1024) {
+            if (t <= 4) { return launch_w8_simt_r8_c4; }
+            if (t <= 16) { return launch_w8_simt_r8_c8; }
+            return launch_w8_mma_r32_c128;
+        }
         if (n == 4096 || n == 10240 || n == 24576) { return launch_w8_mma_r64_c128; }
         if (n == 2048) {
             if (t <= 48) { return launch_w8_small_t; }
