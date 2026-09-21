@@ -31,6 +31,83 @@ from . import inventory
 
 RECIPE_ID = "qwen3_5_9b-v1"
 
+# The 27B's validator asserts its own dimensions, so this target carries its
+# own. Every value here is read from the registered checkpoint; a future one
+# that moves any of them fails at conversion rather than at load.
+_ROOT_CONFIG = {
+    "architectures": ["Qwen3_5ForConditionalGeneration"],
+    "model_type": "qwen3_5",
+    "vision_start_token_id": 248053,
+    "vision_end_token_id": 248054,
+    "image_token_id": 248056,
+    "video_token_id": 248057,
+}
+_TEXT_CONFIG = {
+    "num_hidden_layers": 32,
+    "full_attention_interval": 4,
+    "hidden_size": 4096,
+    "intermediate_size": 12288,
+    "vocab_size": 248320,
+    "num_attention_heads": 16,
+    "num_key_value_heads": 4,
+    "head_dim": 256,
+    "linear_num_key_heads": 16,
+    "linear_num_value_heads": 32,
+    "linear_key_head_dim": 128,
+    "linear_value_head_dim": 128,
+    "linear_conv_kernel_dim": 4,
+    "mamba_ssm_dtype": "float32",
+    "mtp_num_hidden_layers": 1,
+    "mtp_use_dedicated_embeddings": False,
+    "max_position_embeddings": 262144,
+    "rms_norm_eps": 1e-06,
+}
+
+
+def validate_config(config):
+    """Validate this checkpoint's dimensions and summarize them."""
+    from collections.abc import Mapping
+    for name, expected in _ROOT_CONFIG.items():
+        if config.get(name) != expected:
+            raise ValueError(f"config.{name}: expected {expected}, got {config.get(name)}")
+    text = config.get("text_config")
+    vision = config.get("vision_config")
+    if not isinstance(text, Mapping) or not isinstance(vision, Mapping):
+        raise ValueError("config.json must contain text_config and vision_config")
+    for name, expected in _TEXT_CONFIG.items():
+        if text.get(name) != expected:
+            raise ValueError(f"text_config.{name}: expected {expected}, got {text.get(name)}")
+    expected_layer_types = tuple(
+        "full_attention" if layer in inventory.FULL_ATTENTION_LAYERS else "linear_attention"
+        for layer in range(_TEXT_CONFIG["num_hidden_layers"])
+    )
+    layer_types = text.get("layer_types")
+    if not isinstance(layer_types, list) or tuple(layer_types) != expected_layer_types:
+        raise ValueError("text_config.layer_types does not match the 32-layer schedule")
+    rope = text.get("rope_parameters")
+    if not isinstance(rope, Mapping):
+        raise ValueError("text_config.rope_parameters is missing")
+    return {
+        "architecture": config["architectures"][0],
+        "model_type": config["model_type"],
+        "text": {name: text[name] for name in _TEXT_CONFIG},
+        "layer_types": {
+            "layers": len(layer_types),
+            "full_attention": len(inventory.FULL_ATTENTION_LAYERS),
+            "linear_attention": len(layer_types) - len(inventory.FULL_ATTENTION_LAYERS),
+            "full_attention_layers": list(inventory.FULL_ATTENTION_LAYERS),
+        },
+        "rope": dict(rope),
+        "vision": dict(vision),
+        "mtp_num_hidden_layers": text["mtp_num_hidden_layers"],
+        "vision_token_ids": {
+            name: config[name]
+            for name in ("vision_start_token_id", "vision_end_token_id",
+                         "image_token_id", "video_token_id")
+        },
+    }
+
+
 OFFICIAL_RESOURCE_SHA256 = {
     "frontend/tokenizer.json": (
         "5f9e4d4901a92b997e463c1f46055088b6cca5ca61a6522d1b9f64c4bb81cb42"
@@ -119,7 +196,7 @@ def load_resources(model_dir: str | Path) -> tuple[ResourcePayload, ...]:
 def preflight_conversion(model_dir: str | Path) -> ConversionPreflight:
     model = Path(model_dir)
     config = family_conversion.load_json(model / "config.json")
-    config_summary = qwen3_6_convert.validate_config(config)
+    config_summary = validate_config(config)
     preflight_inventory()
     source = recipe.preflight_sources(model)
     resources = load_resources(model)
