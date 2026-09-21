@@ -102,12 +102,15 @@ void linear_swiglu(const Tensor& x, const Weight& gate_up_weight, Tensor& out, L
     const bool q4_weight = large_shape && gate_up_weight.qtype == QType::Q4G64_F16S &&
                            gate_up_weight.group_size == 64 && gate_up_weight.group == 64 &&
                            common_row_split;
+    const bool q4_9_weight = q4_9_shape && gate_up_weight.qtype == QType::Q4G64_F16S &&
+                           gate_up_weight.group_size == 64 && gate_up_weight.group == 64 &&
+                           common_row_split;
     const bool w8_weight = w8_shape && gate_up_weight.qtype == QType::W8G32_F16S &&
                            gate_up_weight.group_size == 32 && gate_up_weight.group == 32 &&
                            gate_up_weight.qhigh == nullptr &&
                            gate_up_weight.high_plane_bytes == 0 && common_row_split;
     const bool nvfp4_weight = large_shape && gate_up_weight.qtype == QType::NVFP4;
-    if (!q4_weight && !w8_weight && !nvfp4_weight) {
+    if (!q4_weight && !q4_9_weight && !w8_weight && !nvfp4_weight) {
         throw std::invalid_argument("linear_swiglu: unsupported weight");
     }
 
