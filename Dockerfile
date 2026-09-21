@@ -15,6 +15,7 @@ RUN apt-get update \
         pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
+ARG BUILD_JOBS=8
 WORKDIR /src
 COPY . .
 
@@ -23,7 +24,7 @@ RUN cmake -S . -B /build -G Ninja \
         -DNINFER_BUILD_APPS=ON \
         -DBUILD_TESTING=OFF \
         -DNINFER_BUILD_BENCHMARKS=OFF \
-    && cmake --build /build --parallel --target ninfer ninfer-serve
+    && cmake --build /build --parallel ${BUILD_JOBS} --target ninfer ninfer-serve
 
 FROM nvidia/cuda:13.1.2-runtime-ubuntu24.04
 
