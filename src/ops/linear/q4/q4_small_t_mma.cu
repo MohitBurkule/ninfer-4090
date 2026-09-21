@@ -16,7 +16,6 @@ constexpr int kLastFullT      = 8;
 constexpr int kLastOptimizedT = 20;
 using FullGeometry            = Q4DraftHeadGeometry<5120>;
 using OptimizedGeometry       = Q4DraftHeadGeometry<2048>;
-using Hidden4096Geometry      = Q4DraftHeadGeometry<4096>;
 
 template <class Geometry, int TileTokens, int ActiveTokens>
 void launch_exact(const Tensor& x, const Weight& weight, Tensor& out, cudaStream_t stream) {
@@ -43,8 +42,6 @@ constexpr auto kFullLaunchers = make_launchers<FullGeometry, kFirstSmallT>(
     std::make_index_sequence<kLastFullT - kFirstSmallT + 1>{});
 constexpr auto kOptimizedLaunchers = make_launchers<OptimizedGeometry, kFirstSmallT>(
     std::make_index_sequence<kLastOptimizedT - kFirstSmallT + 1>{});
-constexpr auto kHidden4096Launchers = make_launchers<Hidden4096Geometry, kFirstSmallT>(
-    std::make_index_sequence<kLastOptimizedT - kFirstSmallT + 1>{});
 
 template <class Geometry>
 bool matches(const Tensor& x, const Weight& weight) {
@@ -63,11 +60,6 @@ void launch_q4_draft_head_small_t(const Tensor& x, const Weight& weight, Tensor&
     if (matches<OptimizedGeometry>(x, weight) && x.ne[1] <= kLastOptimizedT) {
         kOptimizedLaunchers[static_cast<std::size_t>(x.ne[1] - kFirstSmallT)](x, weight, out,
                                                                               stream);
-        return;
-    }
-    if (matches<Hidden4096Geometry>(x, weight) && x.ne[1] <= kLastOptimizedT) {
-        kHidden4096Launchers[static_cast<std::size_t>(x.ne[1] - kFirstSmallT)](x, weight, out,
-                                                                               stream);
         return;
     }
     throw std::invalid_argument("Q4 Linear draft-head small-T: unsupported exact problem");
