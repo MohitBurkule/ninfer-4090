@@ -112,11 +112,19 @@ Q4LinearSwiGluPlan q4_linear_swiglu_resolve_plan(const Q4LinearSwiGluProblem& pr
 
     for (const RouteSpec& route : kRoutes) {
         if (!route.cols.contains(problem.cols)) { continue; }
+        // The paired GEMV kernel is compiled for the 27B's [34816,5120] weight
+        // alone, so any other shape materialises the gate/up pair instead.
+        const bool gemv_fits = problem.k == kShape27.k && problem.gate_up_rows ==
+                               kShape27.gate_up_rows;
+        const Q4LinearSwiGluScheduleId schedule =
+            (route.schedule == Q4LinearSwiGluScheduleId::GemvPair && !gemv_fits)
+                ? Q4LinearSwiGluScheduleId::Materialized
+                : route.schedule;
         Q4LinearSwiGluPlan plan{
-            route.schedule,
+            schedule,
             0,
         };
-        switch (route.schedule) {
+        switch (schedule) {
         case Q4LinearSwiGluScheduleId::GemvPair:
         case Q4LinearSwiGluScheduleId::SmallTExact:
         case Q4LinearSwiGluScheduleId::MmaSplitHalfPairR32C40:
