@@ -2,6 +2,10 @@
 #include "targets/qwen3_6/impl/runtime/text_context.h"
 #include "targets/qwen3_6/impl/runtime/workspace_recipe.h"
 
+#include <cuda_bf16.h>
+#include <cstdlib>
+#include <cstdio>
+#include <cmath>
 #include "core/nvtx.h"
 #include "targets/qwen3_6/impl/runtime/visual_scatter.h"
 #include "targets/qwen3_6/impl/runtime/vision_context.h"
@@ -850,6 +854,35 @@ void TextContext::attn_mix(const FullLayerW& w, Tensor& x, int fidx, Phase ph) {
     Variant::attention_output_projection(a.view({kCfg.q_size, T}), *w.o_proj, x, ph, work_, s);
 }
 
+namespace {
+
+// NINFER_DEBUG_LAYERS prints the hidden-state norm after each layer, which is
+// how a layer that produces garbage is located without a profiler.
+bool debug_layers_enabled() {
+    static const bool enabled = std::getenv("NINFER_DEBUG_LAYERS") != nullptr;
+    return enabled;
+}
+
+void debug_print_layer_norm(int layer, const Tensor& x, cudaStream_t stream) {
+    const std::size_t count = static_cast<std::size_t>(x.ne[0]);
+    std::vector<__nv_bfloat16> host(count);
+    cudaStreamSynchronize(stream);
+    if (cudaMemcpy(host.data(), x.data, count * sizeof(__nv_bfloat16), cudaMemcpyDeviceToHost) !=
+        cudaSuccess) {
+        return;
+    }
+    double sum = 0.0;
+    double peak = 0.0;
+    for (const __nv_bfloat16 value : host) {
+        const double v = static_cast<double>(__bfloat162float(value));
+        sum += v * v;
+        peak = std::max(peak, std::abs(v));
+    }
+    std::fprintf(stderr, "[layers] %2d norm=%.4f peak=%.4f\n", layer, std::sqrt(sum), peak);
+}
+
+} // namespace
+
 void TextContext::gdn_mix(const GdnLayerW& w, Tensor& x, int gidx, Phase ph) {
     cudaStream_t s = ctx_.stream;
     const int T    = x.ne[1];
@@ -860,6 +893,11 @@ void TextContext::gdn_mix(const GdnLayerW& w, Tensor& x, int gidx, Phase ph) {
     Tensor beta        = control.beta;
     Variant::gdn_norm_control_projection(x, *w.input_norm, kCfg.rms_eps, *w.projection, h, g, beta,
                                          work_, s);
+    if (debug_layers_enabled() && gidx == 0) {
+        debug_print_layer_norm(-10, h, s);
+        debug_print_layer_norm(-11, g, s);
+        debug_print_layer_norm(-12, beta, s);
+    }
 
     const auto projection = workspace_recipe::gdn_projection<TextConfig>(work_, T);
     Tensor z              = projection.output_gate.view({kCfg.gdn_v_dim, kCfg.gdn_v_heads, T});
@@ -908,6 +946,11 @@ void TextContext::gdn_mix(const GdnLayerW& w, Tensor& x, int gidx, Phase ph) {
         ops::extract_bf16_columns(qkv_c, 0, qc, s);
         ops::extract_bf16_columns(qkv_c, kCfg.key_dim, kc, s);
         ops::extract_bf16_columns(qkv_c, 2 * kCfg.key_dim, vc, s);
+        if (debug_layers_enabled() && gidx == 0) {
+            debug_print_layer_norm(-20, qkv, s);
+            debug_print_layer_norm(-21, qkv_c, s);
+            debug_print_layer_norm(-22, z, s);
+        }
     }
 
     Tensor q_recurrent = qc.view({kCfg.gdn_k_dim, kCfg.gdn_k_heads, T});
@@ -967,6 +1010,7 @@ void TextContext::mlp_tail(const Tensor* post_norm, const MlpW& m, Tensor& x, Ph
 template <class Tap>
 void TextContext::run_layers(Tensor& x, Phase ph, Tap& tap) {
     const bool prefill = ph == Phase::Prefill;
+    if (debug_layers_enabled()) { debug_print_layer_norm(-1, x, ctx_.stream); }
     for (int layer = 0; layer < kCfg.n_layers; ++layer) {
         if (ModelConfig::is_full(layer)) {
             const int fidx         = ModelConfig::full_idx(layer);
@@ -988,6 +1032,7 @@ void TextContext::run_layers(Tensor& x, Phase ph, Tap& tap) {
                 auto mlp_scope = work_.scope();
                 mlp_tail(full.post_attn_norm, full.mlp, x, ph);
                 if constexpr (Tap::enabled) { tap.capture_layer(layer, x, ctx_.stream); }
+                if (debug_layers_enabled()) { debug_print_layer_norm(layer, x, ctx_.stream); }
             }
         } else {
             const int gidx       = ModelConfig::gdn_idx(layer);
@@ -1009,6 +1054,7 @@ void TextContext::run_layers(Tensor& x, Phase ph, Tap& tap) {
                 auto mlp_scope = work_.scope();
                 mlp_tail(gdn.post_attn_norm, gdn.mlp, x, ph);
                 if constexpr (Tap::enabled) { tap.capture_layer(layer, x, ctx_.stream); }
+                if (debug_layers_enabled()) { debug_print_layer_norm(layer, x, ctx_.stream); }
             }
         }
     }
