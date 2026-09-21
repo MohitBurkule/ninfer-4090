@@ -295,7 +295,7 @@ std::size_t Variant::attention_projection_workspace_capacity_bytes(WeightsProfil
         return 0;
     case WeightsProfile::Nvfp4:
         return ops::attn_input_proj_workspace_capacity_bytes(
-            QType::NVFP4, 10240, TextConfig::hidden, kNvfp4TextPolicy, first, last);
+            QType::NVFP4, TextConfig::convolution_dim, TextConfig::hidden, kNvfp4TextPolicy, first, last);
     }
     throw std::logic_error("invalid 27B weights profile");
 }

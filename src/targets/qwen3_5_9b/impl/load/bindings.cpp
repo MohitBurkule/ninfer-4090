@@ -222,15 +222,15 @@ void bind_groupwise_text_layers(artifact::Binder& binder, BindingPlan& out) {
                                                   {TextConfig::hidden, TextConfig::query_size});
         } else {
             target.gdn.a_log       = artifact::bind_device_tensor(binder, prefix + "gdn/a_log",
-                                                                  NumericFormat::FP32, {48});
+                                                                  NumericFormat::FP32, {TextConfig::gdn_value_heads});
             target.gdn.dt_bias     = artifact::bind_device_tensor(binder, prefix + "gdn/dt_bias",
-                                                                  NumericFormat::FP32, {48});
+                                                                  NumericFormat::FP32, {TextConfig::gdn_value_heads});
             target.gdn.convolution = artifact::bind_device_tensor(
-                binder, prefix + "gdn/convolution", NumericFormat::BF16, {4, 10240});
+                binder, prefix + "gdn/convolution", NumericFormat::BF16, {4, TextConfig::convolution_dim});
             target.gdn.a_projection = artifact::bind_device_tensor(
-                binder, prefix + "gdn/a_projection", NumericFormat::BF16, {48, 4096});
+                binder, prefix + "gdn/a_projection", NumericFormat::BF16, {TextConfig::gdn_value_heads, TextConfig::hidden});
             target.gdn.b_projection = artifact::bind_device_tensor(
-                binder, prefix + "gdn/b_projection", NumericFormat::BF16, {48, 4096});
+                binder, prefix + "gdn/b_projection", NumericFormat::BF16, {TextConfig::gdn_value_heads, TextConfig::hidden});
             target.gdn.input_projection = SplitGdnInputProjectionPlan{
                 .query_key = bind_weight(binder, prefix + "gdn/query_key",
                                          NumericFormat::Q4G64_F16S, {4096, 4096}),
@@ -285,15 +285,15 @@ void bind_nvfp4_text_layers(artifact::Binder& binder, BindingPlan& out) {
             }
         } else {
             target.gdn.a_log       = artifact::bind_device_tensor(binder, prefix + "gdn/a_log",
-                                                                  NumericFormat::FP32, {48});
+                                                                  NumericFormat::FP32, {TextConfig::gdn_value_heads});
             target.gdn.dt_bias     = artifact::bind_device_tensor(binder, prefix + "gdn/dt_bias",
-                                                                  NumericFormat::FP32, {48});
+                                                                  NumericFormat::FP32, {TextConfig::gdn_value_heads});
             target.gdn.convolution = artifact::bind_device_tensor(
-                binder, prefix + "gdn/convolution", NumericFormat::BF16, {4, 10240});
+                binder, prefix + "gdn/convolution", NumericFormat::BF16, {4, TextConfig::convolution_dim});
             target.gdn.a_projection = artifact::bind_device_tensor(
-                binder, prefix + "gdn/a_projection", NumericFormat::BF16, {48, 4096});
+                binder, prefix + "gdn/a_projection", NumericFormat::BF16, {TextConfig::gdn_value_heads, TextConfig::hidden});
             target.gdn.b_projection = artifact::bind_device_tensor(
-                binder, prefix + "gdn/b_projection", NumericFormat::BF16, {48, 4096});
+                binder, prefix + "gdn/b_projection", NumericFormat::BF16, {TextConfig::gdn_value_heads, TextConfig::hidden});
             target.gdn.input_projection = FusedGdnInputProjectionPlan{
                 .query_key_value_z =
                     bind_nvfp4_weight(binder, prefix + "gdn/query_key_value_z", 2 * TextConfig::key_dim + 2 * TextConfig::value_dim, 4096,
@@ -382,7 +382,8 @@ ArtifactLoadPlan bind_artifact(artifact::Binder& binder, WeightsProfile weights_
         return artifact::bind_tensor(binder, name, format, shape, mtp_placement);
     };
     out.mtp.input_projection =
-        bind_mtp("mtp/input_projection", NumericFormat::W8G32_F16S, {4096, 10240});
+        bind_mtp("mtp/input_projection", NumericFormat::W8G32_F16S,
+                 {TextConfig::hidden, TextConfig::mtp_input_rows});
     out.mtp.embedding_norm       = bind_mtp("mtp/embedding_norm", NumericFormat::BF16, {4096});
     out.mtp.hidden_norm          = bind_mtp("mtp/hidden_norm", NumericFormat::BF16, {4096});
     out.mtp.input_norm           = bind_mtp("mtp/layer/input_norm", NumericFormat::BF16, {4096});
@@ -452,15 +453,15 @@ LoadedModelData::LoadedModelData(BindingPlan plan, artifact::MaterializedArtifac
             target.input_norm  = artifact::materialized_tensor(backing, source.input_norm,
                                                                NumericFormat::BF16, {4096});
             target.projection.a_log =
-                artifact::materialized_tensor(backing, source.gdn.a_log, NumericFormat::FP32, {48});
+                artifact::materialized_tensor(backing, source.gdn.a_log, NumericFormat::FP32, {TextConfig::gdn_value_heads});
             target.projection.dt_bias = artifact::materialized_tensor(backing, source.gdn.dt_bias,
-                                                                      NumericFormat::FP32, {48});
+                                                                      NumericFormat::FP32, {TextConfig::gdn_value_heads});
             target.convolution = artifact::materialized_tensor(backing, source.gdn.convolution,
-                                                               NumericFormat::BF16, {10240, 4});
+                                                               NumericFormat::BF16, {TextConfig::convolution_dim, 4});
             target.projection.a_projection = artifact::materialized_weight(
-                backing, source.gdn.a_projection, NumericFormat::BF16, 48, 4096);
+                backing, source.gdn.a_projection, NumericFormat::BF16, TextConfig::gdn_value_heads, TextConfig::hidden);
             target.projection.b_projection = artifact::materialized_weight(
-                backing, source.gdn.b_projection, NumericFormat::BF16, 48, 4096);
+                backing, source.gdn.b_projection, NumericFormat::BF16, TextConfig::gdn_value_heads, TextConfig::hidden);
             target.projection.input_projection = load_gdn_input_projection(source.gdn, backing);
             target.norm =
                 artifact::materialized_tensor(backing, source.gdn.norm, NumericFormat::BF16, {128});
@@ -487,7 +488,8 @@ LoadedModelData::LoadedModelData(BindingPlan plan, artifact::MaterializedArtifac
     if (plan.features.mtp()) {
         auto& mtp            = runtime.mtp.emplace();
         mtp.input_projection = artifact::materialized_weight(
-            backing, plan.mtp.input_projection, NumericFormat::W8G32_F16S, 4096, 10240);
+            backing, plan.mtp.input_projection, NumericFormat::W8G32_F16S, TextConfig::hidden,
+        TextConfig::mtp_input_rows);
         mtp.embedding_norm   = artifact::materialized_tensor(backing, plan.mtp.embedding_norm,
                                                              NumericFormat::BF16, {4096});
         mtp.hidden_norm      = artifact::materialized_tensor(backing, plan.mtp.hidden_norm,

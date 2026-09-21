@@ -18,9 +18,12 @@
 
 namespace ninfer::targets::qwen3_5_9b::detail {
 
-inline constexpr std::size_t kTextLayers          = 64;
-inline constexpr std::size_t kFullAttentionLayers = 16;
-inline constexpr std::size_t kGdnLayers           = 48;
+inline constexpr std::size_t kTextLayers          = 32;
+inline constexpr std::size_t kFullAttentionLayers = 8;
+// GDN layer COUNT, not value heads: 24 of this model's 32 layers, where
+// the 27B had 48 of 64. The two meanings share the number 48 in the 27B,
+// which is exactly how a derived target gets it wrong.
+inline constexpr std::size_t kGdnLayers           = 24;
 
 struct WeightPlan {
     artifact::ObjectHandle object;
