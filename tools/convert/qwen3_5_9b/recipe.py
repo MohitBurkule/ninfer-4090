@@ -125,7 +125,7 @@ def _build_text_recipes() -> tuple[TensorRecipe, ...]:
                     ),
                     TensorRecipe(
                         object_prefix + "gdn/dt_bias",
-                        Cast(SourceTensor(name=source_prefix + "linear_attn.dt_bias", shape=(32,), dtype="F32"), inventory.FP32),
+                        Cast(_source(source_prefix + "linear_attn.dt_bias", (32,)), inventory.FP32),
                     ),
                     TensorRecipe(
                         object_prefix + "gdn/convolution",
@@ -161,7 +161,7 @@ def _build_text_recipes() -> tuple[TensorRecipe, ...]:
                     ),
                     TensorRecipe(
                         object_prefix + "gdn/norm",
-                        _source(source_prefix + "linear_attn.norm.weight", (128,)),
+                        SourceTensor(name=source_prefix + "linear_attn.norm.weight", shape=(128,), dtype="F32"),
                     ),
                     TensorRecipe(
                         object_prefix + "gdn/output",
